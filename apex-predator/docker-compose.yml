@@ -1,0 +1,96 @@
+version: '3.9'
+
+networks:
+  apex-net:
+    driver: bridge
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: apex-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports: ["6379:6379"]
+    volumes: ["redis-data:/data"]
+    networks: [apex-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  scanner_curitiba:
+    build: .
+    container_name: apex-scanner-curitiba
+    restart: unless-stopped
+    command: python -m apex.scanner_main
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+      - .:/app
+    networks: [apex-net]
+
+  executor_singapore:
+    build: .
+    container_name: apex-executor-singapore
+    restart: unless-stopped
+    command: python -m apex.executor --region singapore
+    env_file: .env
+    environment:
+      - REGION=singapore
+    depends_on: [redis, scanner_curitiba]
+    volumes: ["./logs:/app/logs"]
+    networks: [apex-net]
+
+  executor_tokyo:
+    build: .
+    container_name: apex-executor-tokyo
+    restart: unless-stopped
+    command: python -m apex.executor --region tokyo
+    env_file: .env
+    environment:
+      - REGION=tokyo
+    depends_on: [redis]
+    volumes: ["./logs:/app/logs"]
+    networks: [apex-net]
+
+  executor_bahrain:
+    build: .
+    container_name: apex-executor-bahrain
+    restart: unless-stopped
+    command: python -m apex.executor --region bahrain
+    env_file: .env
+    environment:
+      - REGION=bahrain
+    depends_on: [redis]
+    volumes: ["./logs:/app/logs"]
+    networks: [apex-net]
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: apex-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports: ["9090:9090"]
+    networks: [apex-net]
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: apex-grafana
+    restart: unless-stopped
+    ports: ["3000:3000"]
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=apex666
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks: [apex-net]
+    depends_on: [prometheus]
+
+volumes:
+  redis-data:
+  prometheus-data:
+  grafana-data:

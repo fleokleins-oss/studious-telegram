@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: 'apex'
+    static_configs:
+      - targets: ['scanner_curitiba:8000', 'executor_singapore:8000', 'executor_tokyo:8000', 'executor_bahrain:8000']

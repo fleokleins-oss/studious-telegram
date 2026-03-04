@@ -1,0 +1,112 @@
+# docker-compose.yml
+# APEX PREDATOR NEO v3 – Orquestração Multi-Machine
+# Scanner (Curitiba) → Redis Pub/Sub → Executors (Singapore/Tokyo)
+
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: apexv3_redis
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --tcp-backlog 511
+      --tcp-keepalive 60
+      --save ""
+      --appendonly no
+      --hz 100
+      --lfu-log-factor 10
+    volumes:
+      - redis_data:/data
+    networks:
+      - apex_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  scanner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apexv3_scanner
+    env_file: .env
+    environment:
+      - APEX_ROLE=scanner
+      - APEX_REGION=curitiba
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - apex_net
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1024M
+
+  singapore_executor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apexv3_singapore
+    env_file: .env
+    environment:
+      - APEX_ROLE=executor
+      - APEX_REGION=singapore
+    depends_on:
+      redis:
+        condition: service_healthy
+      scanner:
+        condition: service_started
+    networks:
+      - apex_net
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 512M
+
+  tokyo_executor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apexv3_tokyo
+    env_file: .env
+    environment:
+      - APEX_ROLE=executor
+      - APEX_REGION=tokyo
+    depends_on:
+      redis:
+        condition: service_healthy
+      scanner:
+        condition: service_started
+    networks:
+      - apex_net
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 512M
+
+networks:
+  apex_net:
+    driver: bridge
+
+volumes:
+  redis_data:
